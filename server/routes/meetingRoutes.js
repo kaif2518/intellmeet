@@ -2,6 +2,8 @@ const express = require("express");
 const router = express.Router();
 const Meeting = require("../models/Meeting");
 const protect = require("../middleware/authMiddleware");
+const Groq = require("groq-sdk");
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // CREATE a meeting
 router.post("/", protect, async (req, res) => {
@@ -63,4 +65,40 @@ router.delete("/:id", protect, async (req, res) => {
   }
 });
 
+// SAVE meeting notes (transcript) and generate AI summary
+router.post("/:id/summarize", protect, async (req, res) => {
+  try {
+    const { transcript } = req.body;
+    const meeting = await Meeting.findById(req.params.id);
+
+    if (!meeting) return res.status(404).json({ message: "Meeting not found" });
+
+    const prompt = `You are given a meeting transcript. Summarize it in 3-5 sentences, and extract clear action items with an owner if mentioned. Respond ONLY in this exact JSON format, with no extra text:
+{
+  "summary": "string",
+  "actionItems": [{ "text": "string", "owner": "string" }]
+}
+
+Transcript:
+${transcript}`;
+
+    const completion = await groq.chat.completions.create({
+      model:"openai/gpt-oss-120b",
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const raw = completion.choices[0].message.content;
+    const cleaned = raw.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(cleaned);
+
+    meeting.transcript = transcript;
+    meeting.summary = parsed.summary;
+    meeting.actionItems = parsed.actionItems;
+    await meeting.save();
+
+    res.json(meeting);
+  } catch (error) {
+    res.status(500).json({ message: "Summarization failed", error: error.message });
+  }
+});
 module.exports = router;
