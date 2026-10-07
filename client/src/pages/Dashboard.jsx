@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
 
 function Dashboard() {
@@ -79,10 +79,11 @@ function Dashboard() {
       {meetings.length === 0 && !error && <p>No meetings yet.</p>}
       <ul>
         {meetings.map((meeting) => (
-          <li key={meeting._id}>
-            {meeting.title} —{" "}
-            {new Date(meeting.scheduledTime).toLocaleString()}
-          </li>
+         <li key={meeting._id}>
+  {meeting.title} — {new Date(meeting.scheduledTime).toLocaleString()}{" "}
+  <Link to={`/meeting/${meeting._id}`}>Join</Link>{" "}
+  <Link to={`/meeting-summary/${meeting._id}`}>View Summary</Link>
+</li> 
         ))}
       </ul>
     </div>

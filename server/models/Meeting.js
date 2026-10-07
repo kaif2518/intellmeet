@@ -26,15 +26,18 @@ const meetingSchema = new mongoose.Schema(
       default: "",
     },
     summary: {
-      type: String,
-      default: "",
-    },
-    actionItems: [
-      {
-        text: String,
-        owner: String,
-      },
-    ],
+  type: String,
+  default: "",
+},
+keyPoints: [String],
+decisions: [String],
+actionItems: [
+  {
+    text: String,
+    owner: String,
+    dueDate: String,
+  },
+],
   },
   { timestamps: true }
 );

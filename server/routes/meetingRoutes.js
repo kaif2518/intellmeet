@@ -73,11 +73,20 @@ router.post("/:id/summarize", protect, async (req, res) => {
 
     if (!meeting) return res.status(404).json({ message: "Meeting not found" });
 
-    const prompt = `You are given a meeting transcript. Summarize it in 3-5 sentences, and extract clear action items with an owner if mentioned. Respond ONLY in this exact JSON format, with no extra text:
+    const prompt = `You are an expert meeting assistant. Read the meeting transcript below and write a detailed, well-organised summary.
+
+Return ONLY valid JSON (no markdown, no text before or after) in exactly this shape:
 {
-  "summary": "string",
-  "actionItems": [{ "text": "string", "owner": "string" }]
+  "summary": "A clear overview of 4 to 6 sentences: the purpose of the meeting, what was discussed, and the outcome.",
+  "keyPoints": ["Each important topic or point discussed, as a full sentence"],
+  "decisions": ["Each decision that was made"],
+  "actionItems": [{ "text": "the task", "owner": "person responsible, or Unassigned", "dueDate": "deadline if mentioned, otherwise an empty string" }]
 }
+
+Rules:
+- Use only information from the transcript. Do not invent names, dates or decisions.
+- If a section has nothing, return an empty array for it.
+- Write in simple, clear language.
 
 Transcript:
 ${transcript}`;
@@ -94,6 +103,8 @@ ${transcript}`;
     meeting.transcript = transcript;
     meeting.summary = parsed.summary;
     meeting.actionItems = parsed.actionItems;
+    meeting.keyPoints = parsed.keyPoints || [];
+    meeting.decisions = parsed.decisions || [];
     await meeting.save();
 
     res.json(meeting);

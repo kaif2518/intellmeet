@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import Peer from "peerjs";
-
+import { useNavigate, useParams } from "react-router-dom";
+import api from "../api/axios"; // your axios instance (adjust if it's a named export)
 const socket = io("http://localhost:5000");
 
 function MeetingRoom() {
@@ -13,7 +13,27 @@ function MeetingRoom() {
 
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+const navigate = useNavigate();
+const [notes, setNotes] = useState("");
+const [showEnd, setShowEnd] = useState(false);
+const [summarizing, setSummarizing] = useState(false);
+const [error, setError] = useState("");
 
+const handleEndMeeting = async () => {
+  if (!notes.trim()) {
+    setError("Add some notes or a transcript first.");
+    return;
+  }
+  setSummarizing(true);
+  setError("");
+  try {
+    await api.post(`/meetings/${roomId}/summarize`, { transcript: notes });
+    navigate(`/meeting-summary/${roomId}`);
+  } catch (err) {
+    setError(err.response?.data?.message || "Summarize failed. Try again.");
+    setSummarizing(false);
+  }
+};
   useEffect(() => {
     let active = true;
     const peer = new Peer();
@@ -75,6 +95,26 @@ function MeetingRoom() {
 
   return (
     <div>
+      <button onClick={() => setShowEnd(true)} style={{ background: "crimson", color: "white" }}>
+  End Meeting
+</button>
+
+{showEnd && (
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ background: "#fff", color: "#000", padding: 20, borderRadius: 8, width: 420 }}>
+      <h3>End meeting</h3>
+      <p>Paste or type the meeting notes / transcript:</p>
+      <textarea rows={8} style={{ width: "100%" }} value={notes} onChange={(e) => setNotes(e.target.value)} />
+      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+        <button onClick={handleEndMeeting} disabled={summarizing}>
+          {summarizing ? "Summarizing..." : "Generate Summary"}
+        </button>
+        <button onClick={() => setShowEnd(false)} disabled={summarizing}>Cancel</button>
+      </div>
+    </div>
+  </div>
+)}
       <h2>Meeting Room</h2>
       <div style={{ display: "flex", gap: "10px" }}>
         <video ref={myVideoRef} muted style={{ width: "300px" }} />
