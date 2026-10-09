@@ -65,6 +65,8 @@ textarea { resize: vertical; }
 .btn-ghost:hover:not(:disabled) { background: var(--surface-2); }
 .btn-danger { background: var(--danger); color: #fff; }
 .btn-danger:hover:not(:disabled) { background: #dc2626; }
+.btn-hand-active { background: #f59e0b; color: #1a1200; }
+.btn-hand-active:hover:not(:disabled) { background: #d98a06; }
 
 .error-text {
   color: #fca5a5;
@@ -140,8 +142,16 @@ textarea { resize: vertical; }
 .meeting-actions { display: flex; gap: 10px; }
 
 /* meeting room */
-.room-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
 .room-header h2 { margin: 0; }
+.room-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .room-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .room-grid video {
   width: 100%;
@@ -152,6 +162,10 @@ textarea { resize: vertical; }
   border: 1px solid var(--border);
 }
 .video-tile { position: relative; }
+.video-tile.hand-up video {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px #fbbf24;
+}
 .name-tag {
   position: absolute;
   left: 12px;
@@ -161,6 +175,16 @@ textarea { resize: vertical; }
   border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
+}
+.hand-badge { margin-left: 6px; }
+.hand-summary {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+  padding: 8px 14px;
+  border-radius: 8px;
+  margin: 0 0 16px;
+  font-size: 14px;
 }
 .chat-box {
   margin-top: 24px;
@@ -222,6 +246,106 @@ textarea { resize: vertical; }
 .owner { color: #8b8ff5; font-weight: 600; }
 .due { color: var(--muted); font-style: italic; }
 
+/* intro screen */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #1a2347 0%, #0b0f1a 65%);
+  transition: opacity 0.5s ease;
+  cursor: pointer;
+  overflow: hidden;
+}
+.splash-leaving { opacity: 0; }
+.splash-glow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  max-width: 120vw;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.38),
+    rgba(56, 189, 248, 0.12) 45%,
+    transparent 70%
+  );
+  filter: blur(10px);
+  animation: glowPulse 2.4s ease-in-out infinite;
+}
+.splash-content { position: relative; text-align: center; padding: 0 20px; }
+.splash-logo {
+  filter: drop-shadow(0 10px 30px rgba(99, 102, 241, 0.55));
+  animation: logoIn 0.8s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+.splash-title {
+  margin: 18px 0 6px;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  display: flex;
+  justify-content: center;
+}
+.splash-title span {
+  opacity: 0;
+  transform: translateY(14px);
+  color: var(--text);
+  animation: letterIn 0.5s ease forwards;
+}
+.splash-title span.accent { color: #8b8ff5; }
+.splash-tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  letter-spacing: 2px;
+  opacity: 0;
+  animation: fadeUp 0.6s ease 1.3s forwards;
+}
+.splash-bar {
+  width: 180px;
+  height: 3px;
+  margin: 28px auto 0;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.splash-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #38bdf8, #8b5cf6);
+  animation: barFill 2.3s ease-out forwards;
+}
+
+@keyframes logoIn {
+  from { opacity: 0; transform: scale(0.5) rotate(-12deg); }
+  to { opacity: 1; transform: scale(1) rotate(0deg); }
+}
+@keyframes letterIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes barFill {
+  to { width: 100%; }
+}
+@keyframes glowPulse {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash *, .splash-glow {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+}
+
 @media (max-width: 700px) {
   .room-grid { grid-template-columns: 1fr; }
+  .splash-title { font-size: 36px; }
 }

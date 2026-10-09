@@ -1,10 +1,34 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import MeetingRoom from "./pages/MeetingRoom";
 import MeetingSummary from "./pages/MeetingSummary";
+import Splash from "./Splash";
+
 function App() {
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return !sessionStorage.getItem("introSeen");
+    } catch (e) {
+      return true;
+    }
+  });
+
+  const finishIntro = () => {
+    try {
+      sessionStorage.setItem("introSeen", "1");
+    } catch (e) {
+      /* storage not available */
+    }
+    setShowSplash(false);
+  };
+
+  if (showSplash) {
+    return <Splash onDone={finishIntro} />;
+  }
+
   return (
     <BrowserRouter>
       <Routes>

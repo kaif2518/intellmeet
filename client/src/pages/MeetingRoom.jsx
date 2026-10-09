@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import Peer from "peerjs";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/axios";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 const socket = SERVER_URL ? io(SERVER_URL) : io();
+
+const MAX_PARTICIPANTS = 6;
 
 const TURN_USER = import.meta.env.VITE_TURN_USERNAME;
 const TURN_PASS = import.meta.env.VITE_TURN_CREDENTIAL;
@@ -36,7 +38,7 @@ const ICE_SERVERS = [
       },
 ];
 
-function RemoteVideo({ stream, name }) {
+function RemoteVideo({ stream, name, handUp }) {
   const ref = useRef();
 
   useEffect(() => {
@@ -47,7 +49,7 @@ function RemoteVideo({ stream, name }) {
   }, [stream]);
 
   return (
-    <div className="video-tile">
+    <div className={`video-tile ${handUp ? "hand-up" : ""}`}>
       <video
         ref={ref}
         playsInline
@@ -56,6 +58,7 @@ function RemoteVideo({ stream, name }) {
       />
       <span className="name-tag">
         {name}
+        {handUp && <span className="hand-badge">✋</span>}
         {!stream ? " (connecting...)" : ""}
       </span>
     </div>
@@ -77,17 +80,26 @@ function MeetingRoom() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [remotes, setRemotes] = useState({});
+  const [handsUp, setHandsUp] = useState({});
+  const [myHand, setMyHand] = useState(false);
+  const [roomFull, setRoomFull] = useState(false);
   const [transcript, setTranscript] = useState([]);
   const [myInterim, setMyInterim] = useState("");
   const [remoteInterims, setRemoteInterims] = useState({});
   const [speechSupported, setSpeechSupported] = useState(true);
   const [mediaError, setMediaError] = useState("");
+  const [mediaHint, setMediaHint] = useState(false);
+  const [cameraOn, setCameraOn] = useState(true);
   const [notes, setNotes] = useState("");
   const [showEnd, setShowEnd] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   const [error, setError] = useState("");
 
   const remoteList = Object.entries(remotes);
+  const raisedNames = [
+    ...(myHand ? [`${myName} (You)`] : []),
+    ...remoteList.filter(([id]) => handsUp[id]).map(([, r]) => r.name),
+  ];
 
   const openEnd = () => {
     const lines = [...transcript];
@@ -112,6 +124,12 @@ function MeetingRoom() {
     }
   };
 
+  const toggleHand = () => {
+    const next = !myHand;
+    setMyHand(next);
+    socket.emit("raise-hand", { roomId, raised: next });
+  };
+
   // Video call (everyone connects to everyone) and chat
   useEffect(() => {
     if (!localStorage.getItem("token")) {
@@ -120,6 +138,9 @@ function MeetingRoom() {
     }
 
     let active = true;
+    setMyHand(false);
+    setRoomFull(false);
+
     const peer = new Peer(undefined, { config: { iceServers: ICE_SERVERS } });
 
     let peerId = null;
@@ -149,6 +170,11 @@ function MeetingRoom() {
         delete next[id];
         return next;
       });
+      setHandsUp((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     };
 
     const tryJoin = () => {
@@ -157,11 +183,37 @@ function MeetingRoom() {
       socket.emit("join-room", { roomId, peerId, name: myName });
     };
 
-    const streamPromise = !navigator.mediaDevices?.getUserMedia
-      ? Promise.reject(new Error("no-media"))
-      : navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    // Try camera + microphone, then microphone only
+    const getMedia = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("no-media");
+      }
+      try {
+        return await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true,
+        });
+      } catch (e) {
+        const audioOnly = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        if (active) {
+          setMediaError(
+            "The camera could not be opened. Allow camera access for this site, close other apps or tabs that use the camera, then refresh. You joined with audio only."
+          );
+        }
+        return audioOnly;
+      }
+    };
 
-    // Answer incoming calls once our camera is ready
+    const streamPromise = getMedia();
+
+    // Show a hint if the permission box seems stuck
+    const hintTimer = setTimeout(() => {
+      if (active && !localStreamRef.current) setMediaHint(true);
+    }, 6000);
+
+    // Answer incoming calls once our media is ready
     peer.on("call", async (call) => {
       const callerName = call.metadata?.name || "Guest";
       addRemote(call.peer, callerName, null);
@@ -175,7 +227,7 @@ function MeetingRoom() {
         );
         call.on("close", () => removeRemote(call.peer));
       } catch (e) {
-        /* camera not available, cannot answer */
+        /* no media available, cannot answer */
       }
     });
 
@@ -186,10 +238,13 @@ function MeetingRoom() {
 
     streamPromise
       .then((stream) => {
+        clearTimeout(hintTimer);
         if (!active) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
+        setMediaHint(false);
+        setCameraOn(stream.getVideoTracks().length > 0);
         localStreamRef.current = stream;
         if (myVideoRef.current) {
           myVideoRef.current.srcObject = stream;
@@ -198,14 +253,16 @@ function MeetingRoom() {
         tryJoin();
       })
       .catch((e) => {
+        clearTimeout(hintTimer);
         if (!active) return;
+        setMediaHint(false);
         if (e && e.message === "no-media") {
           setMediaError(
-            "Camera and microphone need a secure (https) link, so video is off here. Chat still works."
+            "Camera and microphone need a secure (https) link, so you cannot join this meeting from here."
           );
         } else {
           setMediaError(
-            "Could not access the camera or microphone. Allow permission and refresh the page."
+            "Could not access the camera or microphone. Click the icon at the left of the address bar, allow both for this site, and refresh the page to join."
           );
         }
       });
@@ -213,6 +270,13 @@ function MeetingRoom() {
     // We just joined: call everyone who is already in the room
     const handleRoomUsers = (users) => {
       if (!active || !localStreamRef.current) return;
+      setHandsUp((prev) => {
+        const next = { ...prev };
+        users.forEach((u) => {
+          if (u.handRaised) next[u.peerId] = true;
+        });
+        return next;
+      });
       users.forEach(({ peerId: otherId, name }) => {
         addRemote(otherId, name, null);
         const call = peer.call(otherId, localStreamRef.current, {
@@ -235,6 +299,30 @@ function MeetingRoom() {
       removeRemote(otherId);
     };
 
+    const handleHandChanged = ({ peerId: otherId, raised }) => {
+      setHandsUp((prev) => {
+        const next = { ...prev };
+        if (raised) next[otherId] = true;
+        else delete next[otherId];
+        return next;
+      });
+    };
+
+    // The room already has the maximum number of people
+    const handleRoomFull = () => {
+      if (!active) return;
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
+      }
+      try {
+        peer.destroy();
+      } catch (e) {
+        /* already destroyed */
+      }
+      setRoomFull(true);
+    };
+
     const handleReceiveMessage = ({ message, sender }) => {
       setMessages((prev) => [...prev, { message, sender }]);
     };
@@ -242,14 +330,19 @@ function MeetingRoom() {
     socket.on("room-users", handleRoomUsers);
     socket.on("user-joined", handleUserJoined);
     socket.on("user-left", handleUserLeft);
+    socket.on("hand-changed", handleHandChanged);
+    socket.on("room-full", handleRoomFull);
     socket.on("receive-message", handleReceiveMessage);
 
     return () => {
       active = false;
+      clearTimeout(hintTimer);
       socket.emit("leave-room");
       socket.off("room-users", handleRoomUsers);
       socket.off("user-joined", handleUserJoined);
       socket.off("user-left", handleUserLeft);
+      socket.off("hand-changed", handleHandChanged);
+      socket.off("room-full", handleRoomFull);
       socket.off("receive-message", handleReceiveMessage);
       Object.values(callsRef.current).forEach((c) => {
         try {
@@ -259,7 +352,11 @@ function MeetingRoom() {
         }
       });
       callsRef.current = {};
-      peer.destroy();
+      try {
+        peer.destroy();
+      } catch (e) {
+        /* already destroyed */
+      }
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
         localStreamRef.current = null;
@@ -269,7 +366,7 @@ function MeetingRoom() {
 
   // Live transcript (speech recognition with live partial words)
   useEffect(() => {
-    if (!localStorage.getItem("token")) return;
+    if (!localStorage.getItem("token") || roomFull) return;
 
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -357,7 +454,7 @@ function MeetingRoom() {
       socket.off("transcript-line", handleLine);
       socket.off("transcript-interim", handleInterim);
     };
-  }, [roomId]);
+  }, [roomId, roomFull]);
 
   // Keep the transcript scrolled to the newest line
   useEffect(() => {
@@ -370,6 +467,23 @@ function MeetingRoom() {
     setText("");
   };
 
+  if (roomFull) {
+    return (
+      <div className="container">
+        <div className="summary-card" style={{ textAlign: "center" }}>
+          <h2>This meeting is full</h2>
+          <p className="muted">
+            A meeting can have up to {MAX_PARTICIPANTS} people. Ask the host to
+            check the meeting, or try again when someone leaves.
+          </p>
+          <Link className="btn btn-primary" to="/dashboard">
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const interimStyle = { color: "var(--muted)", fontStyle: "italic" };
   const hasInterim = myInterim || Object.keys(remoteInterims).length > 0;
 
@@ -379,13 +493,25 @@ function MeetingRoom() {
         <div>
           <h2>Meeting Room</h2>
           <span className="muted">
-            {remoteList.length + 1} {remoteList.length === 0 ? "person" : "people"} in this meeting
+            {remoteList.length + 1} of {MAX_PARTICIPANTS} people in this meeting
           </span>
         </div>
-        <button className="btn btn-danger" onClick={openEnd}>
-          End Meeting
-        </button>
+        <div className="room-actions">
+          <button
+            className={`btn ${myHand ? "btn-hand-active" : "btn-ghost"}`}
+            onClick={toggleHand}
+          >
+            ✋ {myHand ? "Lower hand" : "Raise hand"}
+          </button>
+          <button className="btn btn-danger" onClick={openEnd}>
+            End Meeting
+          </button>
+        </div>
       </div>
+
+      {raisedNames.length > 0 && (
+        <p className="hand-summary">✋ Hands raised: {raisedNames.join(", ")}</p>
+      )}
 
       {showEnd && (
         <div className="modal-overlay">
@@ -421,18 +547,37 @@ function MeetingRoom() {
         </div>
       )}
 
-      {mediaError && <p className="error-text" style={{ marginBottom: 16 }}>{mediaError}</p>}
+      {mediaError && (
+        <p className="error-text" style={{ marginBottom: 16 }}>{mediaError}</p>
+      )}
+      {mediaHint && !mediaError && (
+        <p className="error-text" style={{ marginBottom: 16 }}>
+          Waiting for camera and microphone permission. Look for a permission box
+          near the address bar and click Allow. You join the meeting once it opens.
+        </p>
+      )}
 
       <div
         className="room-grid"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 420px))",
+          justifyContent: "center",
+        }}
       >
-        <div className="video-tile">
+        <div className={`video-tile ${myHand ? "hand-up" : ""}`}>
           <video ref={myVideoRef} muted playsInline autoPlay />
-          <span className="name-tag">{myName} (You)</span>
+          <span className="name-tag">
+            {myName} (You){cameraOn ? "" : " - camera off"}
+            {myHand && <span className="hand-badge">✋</span>}
+          </span>
         </div>
         {remoteList.map(([id, remote]) => (
-          <RemoteVideo key={id} stream={remote.stream} name={remote.name} />
+          <RemoteVideo
+            key={id}
+            stream={remote.stream}
+            name={remote.name}
+            handUp={!!handsUp[id]}
+          />
         ))}
       </div>
 
