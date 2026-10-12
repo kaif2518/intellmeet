@@ -53,7 +53,7 @@ const io = new Server(server, {
 
 const MAX_PARTICIPANTS = 6;
 
-// roomId -> { socketId: { peerId, name, handRaised } }
+// roomId -> { socketId: { peerId, name, handRaised, camOn, micOn } }
 const rooms = {};
 
 const inRoom = (socket, roomId) => socket.data.roomId === roomId;
@@ -74,7 +74,7 @@ const removeFromRoom = (socket) => {
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  socket.on('join-room', async ({ roomId, peerId, name }) => {
+  socket.on('join-room', async ({ roomId, peerId, name, camOn, micOn }) => {
     removeFromRoom(socket);
 
     // Do not let anyone into a meeting that does not exist or has ended
@@ -105,12 +105,23 @@ io.on('connection', (socket) => {
 
     if (!rooms[roomId]) rooms[roomId] = {};
     const existing = Object.values(rooms[roomId]);
-    rooms[roomId][socket.id] = { peerId, name, handRaised: false };
+    rooms[roomId][socket.id] = {
+      peerId,
+      name,
+      handRaised: false,
+      camOn: camOn !== false,
+      micOn: micOn !== false,
+    };
 
-    // tell the newcomer who is already here (and who has a hand up),
+    // tell the newcomer who is already here (hands, camera and mic state included),
     // and tell everyone else about the newcomer
     socket.emit('room-users', existing);
-    socket.to(roomId).emit('user-joined', { peerId, name });
+    socket.to(roomId).emit('user-joined', {
+      peerId,
+      name,
+      camOn: camOn !== false,
+      micOn: micOn !== false,
+    });
     console.log(`${name} (peer ${peerId}) joined room ${roomId}, total ${existing.length + 1}`);
   });
 
@@ -122,6 +133,17 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('hand-changed', {
       peerId: socket.data.peerId,
       raised: !!raised,
+    });
+  });
+
+  socket.on('media-state', ({ roomId, camOn, micOn }) => {
+    if (!inRoom(socket, roomId) || !rooms[roomId]?.[socket.id]) return;
+    rooms[roomId][socket.id].camOn = !!camOn;
+    rooms[roomId][socket.id].micOn = !!micOn;
+    socket.to(roomId).emit('media-changed', {
+      peerId: socket.data.peerId,
+      camOn: !!camOn,
+      micOn: !!micOn,
     });
   });
 

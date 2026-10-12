@@ -39,7 +39,22 @@ const ICE_SERVERS = [
       },
 ];
 
-function RemoteVideo({ stream, name, handUp }) {
+const avatarStyle = {
+  position: "absolute",
+  inset: 0,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  background: "var(--surface-2)",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius)",
+  fontSize: 56,
+  fontWeight: 700,
+  color: "var(--accent)",
+  pointerEvents: "none",
+};
+
+function RemoteVideo({ stream, name, handUp, camOn, micOn }) {
   const ref = useRef();
 
   useEffect(() => {
@@ -57,8 +72,12 @@ function RemoteVideo({ stream, name, handUp }) {
         autoPlay
         onClick={() => ref.current?.play().catch(() => {})}
       />
+      {!camOn && (
+        <div style={avatarStyle}>{(name || "?").charAt(0).toUpperCase()}</div>
+      )}
       <span className="name-tag">
         {name}
+        {!micOn && <span className="hand-badge">🔇</span>}
         {handUp && <span className="hand-badge">✋</span>}
         {!stream ? " (connecting...)" : ""}
       </span>
@@ -73,6 +92,7 @@ function MeetingRoom() {
   const myVideoRef = useRef();
   const localStreamRef = useRef();
   const callsRef = useRef({});
+  const facingRef = useRef("user");
   const transcriptEndRef = useRef();
   const lastInterimSent = useRef(0);
 
@@ -86,7 +106,13 @@ function MeetingRoom() {
   const [text, setText] = useState("");
   const [remotes, setRemotes] = useState({});
   const [handsUp, setHandsUp] = useState({});
+  const [mediaStates, setMediaStates] = useState({});
   const [myHand, setMyHand] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [hasCamera, setHasCamera] = useState(true);
+  const [canFlip, setCanFlip] = useState(false);
+  const [flipping, setFlipping] = useState(false);
   const [roomFull, setRoomFull] = useState(false);
   const [transcript, setTranscript] = useState([]);
   const [myInterim, setMyInterim] = useState("");
@@ -94,7 +120,6 @@ function MeetingRoom() {
   const [speechSupported, setSpeechSupported] = useState(true);
   const [mediaError, setMediaError] = useState("");
   const [mediaHint, setMediaHint] = useState(false);
-  const [cameraOn, setCameraOn] = useState(true);
   const [notes, setNotes] = useState("");
   const [showEnd, setShowEnd] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
@@ -106,6 +131,7 @@ function MeetingRoom() {
     ...(myHand ? [`${myName} (You)`] : []),
     ...remoteList.filter(([id]) => handsUp[id]).map(([, r]) => r.name),
   ];
+  const myCameraShown = hasCamera && camOn;
 
   const openEnd = () => {
     const lines = [...transcript];
@@ -134,6 +160,83 @@ function MeetingRoom() {
     const next = !myHand;
     setMyHand(next);
     socket.emit("raise-hand", { roomId, raised: next });
+  };
+
+  // Turn your own microphone on or off
+  const toggleMic = () => {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const next = !micOn;
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = next;
+    });
+    setMicOn(next);
+    if (!next) {
+      setMyInterim("");
+      socket.emit("transcript-interim", { roomId, name: myName, text: "" });
+    }
+    socket.emit("media-state", { roomId, camOn: hasCamera && camOn, micOn: next });
+  };
+
+  // Turn your own camera on or off
+  const toggleCamera = () => {
+    const stream = localStreamRef.current;
+    if (!stream || !hasCamera) return;
+    const next = !camOn;
+    stream.getVideoTracks().forEach((t) => {
+      t.enabled = next;
+    });
+    setCamOn(next);
+    socket.emit("media-state", { roomId, camOn: next, micOn });
+  };
+
+  // Switch between the front and back camera (phones)
+  const flipCamera = async () => {
+    const stream = localStreamRef.current;
+    if (!stream || flipping) return;
+    const oldTrack = stream.getVideoTracks()[0];
+    if (!oldTrack) return;
+
+    const nextFacing = facingRef.current === "user" ? "environment" : "user";
+    setFlipping(true);
+    setMediaError("");
+
+    const swapTrack = (newTrack) => {
+      newTrack.enabled = camOn;
+      stream.getVideoTracks().forEach((t) => stream.removeTrack(t));
+      stream.addTrack(newTrack);
+      if (myVideoRef.current) {
+        myVideoRef.current.srcObject = stream;
+        myVideoRef.current.play().catch(() => {});
+      }
+      Object.values(callsRef.current).forEach((call) => {
+        const sender = call.peerConnection
+          ?.getSenders()
+          .find((s) => s.track && s.track.kind === "video");
+        if (sender) sender.replaceTrack(newTrack).catch(() => {});
+      });
+    };
+
+    try {
+      // Some phones cannot open two cameras at once, so release the old one first
+      oldTrack.stop();
+      const next = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: nextFacing } },
+      });
+      swapTrack(next.getVideoTracks()[0]);
+      facingRef.current = nextFacing;
+    } catch (e) {
+      try {
+        const back = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingRef.current } },
+        });
+        swapTrack(back.getVideoTracks()[0]);
+      } catch (e2) {
+        /* could not restore the old camera */
+      }
+      setMediaError("Could not switch the camera on this device.");
+    }
+    setFlipping(false);
   };
 
   // Check that the meeting exists and has not ended, before opening the camera
@@ -181,7 +284,10 @@ function MeetingRoom() {
 
     let active = true;
     setMyHand(false);
+    setMicOn(true);
+    setCamOn(true);
     setRoomFull(false);
+    facingRef.current = "user";
 
     const peer = new Peer(undefined, { config: { iceServers: ICE_SERVERS } });
 
@@ -217,12 +323,24 @@ function MeetingRoom() {
         delete next[id];
         return next;
       });
+      setMediaStates((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     };
 
     const tryJoin = () => {
       if (!active || joined || !peerId || !localStreamRef.current) return;
       joined = true;
-      socket.emit("join-room", { roomId, peerId, name: myName });
+      const hasVideo = localStreamRef.current.getVideoTracks().length > 0;
+      socket.emit("join-room", {
+        roomId,
+        peerId,
+        name: myName,
+        camOn: hasVideo,
+        micOn: true,
+      });
     };
 
     // Try camera + microphone, then microphone only
@@ -286,11 +404,24 @@ function MeetingRoom() {
           return;
         }
         setMediaHint(false);
-        setCameraOn(stream.getVideoTracks().length > 0);
+        const hasVideo = stream.getVideoTracks().length > 0;
+        setHasCamera(hasVideo);
+        setCamOn(hasVideo);
         localStreamRef.current = stream;
         if (myVideoRef.current) {
           myVideoRef.current.srcObject = stream;
           myVideoRef.current.play().catch(() => {});
+        }
+        // Show the flip button only when the device has two or more cameras
+        if (hasVideo && navigator.mediaDevices.enumerateDevices) {
+          navigator.mediaDevices
+            .enumerateDevices()
+            .then((devices) => {
+              if (!active) return;
+              const cameras = devices.filter((d) => d.kind === "videoinput");
+              setCanFlip(cameras.length > 1);
+            })
+            .catch(() => {});
         }
         tryJoin();
       })
@@ -319,6 +450,16 @@ function MeetingRoom() {
         });
         return next;
       });
+      setMediaStates((prev) => {
+        const next = { ...prev };
+        users.forEach((u) => {
+          next[u.peerId] = {
+            camOn: u.camOn !== false,
+            micOn: u.micOn !== false,
+          };
+        });
+        return next;
+      });
       users.forEach(({ peerId: otherId, name }) => {
         addRemote(otherId, name, null);
         const call = peer.call(otherId, localStreamRef.current, {
@@ -332,9 +473,18 @@ function MeetingRoom() {
     };
 
     // Someone else joined: show a placeholder tile, they will call us
-    const handleUserJoined = ({ peerId: otherId, name }) => {
+    const handleUserJoined = ({
+      peerId: otherId,
+      name,
+      camOn: theirCam,
+      micOn: theirMic,
+    }) => {
       if (!active) return;
       addRemote(otherId, name, null);
+      setMediaStates((prev) => ({
+        ...prev,
+        [otherId]: { camOn: theirCam !== false, micOn: theirMic !== false },
+      }));
     };
 
     const handleUserLeft = ({ peerId: otherId }) => {
@@ -348,6 +498,13 @@ function MeetingRoom() {
         else delete next[otherId];
         return next;
       });
+    };
+
+    const handleMediaChanged = ({ peerId: otherId, camOn: theirCam, micOn: theirMic }) => {
+      setMediaStates((prev) => ({
+        ...prev,
+        [otherId]: { camOn: theirCam !== false, micOn: theirMic !== false },
+      }));
     };
 
     // The room already has the maximum number of people
@@ -387,6 +544,7 @@ function MeetingRoom() {
     socket.on("user-joined", handleUserJoined);
     socket.on("user-left", handleUserLeft);
     socket.on("hand-changed", handleHandChanged);
+    socket.on("media-changed", handleMediaChanged);
     socket.on("room-full", handleRoomFull);
     socket.on("room-closed", handleRoomClosed);
     socket.on("receive-message", handleReceiveMessage);
@@ -399,6 +557,7 @@ function MeetingRoom() {
       socket.off("user-joined", handleUserJoined);
       socket.off("user-left", handleUserLeft);
       socket.off("hand-changed", handleHandChanged);
+      socket.off("media-changed", handleMediaChanged);
       socket.off("room-full", handleRoomFull);
       socket.off("room-closed", handleRoomClosed);
       socket.off("receive-message", handleReceiveMessage);
@@ -421,12 +580,43 @@ function MeetingRoom() {
       }
       setRemotes({});
       setHandsUp({});
+      setMediaStates({});
     };
   }, [roomId, meetingOk]);
 
-  // Live transcript (speech recognition with live partial words)
+  // Receive other people's transcript lines (works even while you are muted)
   useEffect(() => {
-    if (!meetingOk || roomFull) return;
+    if (!meetingOk) return;
+
+    const handleLine = ({ line }) => {
+      setTranscript((prev) => [...prev, line]);
+      const speaker = line.split(": ")[0];
+      setRemoteInterims((prev) => {
+        const next = { ...prev };
+        delete next[speaker];
+        return next;
+      });
+    };
+    const handleInterim = ({ name, text }) => {
+      setRemoteInterims((prev) => {
+        const next = { ...prev };
+        if (text) next[name] = text;
+        else delete next[name];
+        return next;
+      });
+    };
+    socket.on("transcript-line", handleLine);
+    socket.on("transcript-interim", handleInterim);
+
+    return () => {
+      socket.off("transcript-line", handleLine);
+      socket.off("transcript-interim", handleInterim);
+    };
+  }, [roomId, meetingOk]);
+
+  // Your own live transcript (speech recognition), only while your mic is on
+  useEffect(() => {
+    if (!meetingOk || roomFull || !micOn) return;
     if (!localStorage.getItem("token")) return;
 
     const SpeechRecognition =
@@ -489,33 +679,11 @@ function MeetingRoom() {
       /* already started */
     }
 
-    const handleLine = ({ line }) => {
-      setTranscript((prev) => [...prev, line]);
-      const speaker = line.split(": ")[0];
-      setRemoteInterims((prev) => {
-        const next = { ...prev };
-        delete next[speaker];
-        return next;
-      });
-    };
-    const handleInterim = ({ name, text }) => {
-      setRemoteInterims((prev) => {
-        const next = { ...prev };
-        if (text) next[name] = text;
-        else delete next[name];
-        return next;
-      });
-    };
-    socket.on("transcript-line", handleLine);
-    socket.on("transcript-interim", handleInterim);
-
     return () => {
       active = false;
       recognition.stop();
-      socket.off("transcript-line", handleLine);
-      socket.off("transcript-interim", handleInterim);
     };
-  }, [roomId, roomFull, meetingOk]);
+  }, [roomId, roomFull, meetingOk, micOn]);
 
   // Keep the transcript scrolled to the newest line
   useEffect(() => {
@@ -610,12 +778,6 @@ function MeetingRoom() {
           </span>
         </div>
         <div className="room-actions">
-          <button
-            className={`btn ${myHand ? "btn-hand-active" : "btn-ghost"}`}
-            onClick={toggleHand}
-          >
-            ✋ {myHand ? "Lower hand" : "Raise hand"}
-          </button>
           <button className="btn btn-danger" onClick={openEnd}>
             End Meeting
           </button>
@@ -679,8 +841,13 @@ function MeetingRoom() {
       >
         <div className={`video-tile ${myHand ? "hand-up" : ""}`}>
           <video ref={myVideoRef} muted playsInline autoPlay />
+          {!myCameraShown && (
+            <div style={avatarStyle}>{myName.charAt(0).toUpperCase()}</div>
+          )}
           <span className="name-tag">
-            {myName} (You){cameraOn ? "" : " - camera off"}
+            {myName} (You)
+            {!hasCamera ? " - no camera" : ""}
+            {!micOn && <span className="hand-badge">🔇</span>}
             {myHand && <span className="hand-badge">✋</span>}
           </span>
         </div>
@@ -690,14 +857,60 @@ function MeetingRoom() {
             stream={remote.stream}
             name={remote.name}
             handUp={!!handsUp[id]}
+            camOn={mediaStates[id]?.camOn !== false}
+            micOn={mediaStates[id]?.micOn !== false}
           />
         ))}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          justifyContent: "center",
+          flexWrap: "wrap",
+          marginTop: 16,
+        }}
+      >
+        <button
+          className={`btn ${micOn ? "btn-ghost" : "btn-danger"}`}
+          onClick={toggleMic}
+        >
+          {micOn ? "🎤 Mute" : "🔇 Unmute"}
+        </button>
+        <button
+          className={`btn ${myCameraShown ? "btn-ghost" : "btn-danger"}`}
+          onClick={toggleCamera}
+          disabled={!hasCamera}
+        >
+          {myCameraShown ? "📷 Turn camera off" : "🚫 Turn camera on"}
+        </button>
+        {canFlip && (
+          <button
+            className="btn btn-ghost"
+            onClick={flipCamera}
+            disabled={flipping}
+          >
+            🔄 {flipping ? "Switching..." : "Flip camera"}
+          </button>
+        )}
+        <button
+          className={`btn ${myHand ? "btn-hand-active" : "btn-ghost"}`}
+          onClick={toggleHand}
+        >
+          ✋ {myHand ? "Lower hand" : "Raise hand"}
+        </button>
       </div>
 
       <div className="chat-box">
         <h3>Live Transcript</h3>
         {!speechSupported && (
           <p className="muted">Speech recognition works only in Chrome or Edge.</p>
+        )}
+        {!micOn && (
+          <p className="muted">
+            Your microphone is muted, so your own speech is not being transcribed.
+          </p>
         )}
         <div className="chat-messages">
           {transcript.length === 0 && !hasInterim && (
