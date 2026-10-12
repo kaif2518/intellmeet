@@ -7,6 +7,8 @@ const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/authRoutes');
 const meetingRoutes = require('./routes/meetingRoutes');
+const protect = require('./middleware/authMiddleware');
+const Meeting = require('./models/Meeting');
 
 const app = express();
 app.use(cors());
@@ -19,6 +21,30 @@ mongoose.connect(process.env.MONGO_URI)
   .catch((err) => console.log(err));
 
 app.get('/', (req, res) => res.send('IntellMeet API running'));
+
+// A meeting can be joined until this many minutes after its scheduled start.
+// Keep this the same as MEETING_WINDOW_MINUTES in client/src/meetingTime.js
+const MEETING_WINDOW_MINUTES = 120;
+
+const getMeetingStatus = async (id) => {
+  if (!mongoose.Types.ObjectId.isValid(id)) return { status: 'not-found' };
+  const meeting = await Meeting.findById(id).select('scheduledTime');
+  if (!meeting) return { status: 'not-found' };
+  const endsAt =
+    new Date(meeting.scheduledTime).getTime() + MEETING_WINDOW_MINUTES * 60 * 1000;
+  if (Date.now() > endsAt) {
+    return { status: 'expired', scheduledTime: meeting.scheduledTime };
+  }
+  return { status: 'ok', scheduledTime: meeting.scheduledTime };
+};
+
+app.get('/api/meeting-status/:id', protect, async (req, res) => {
+  try {
+    res.json(await getMeetingStatus(req.params.id));
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -48,8 +74,23 @@ const removeFromRoom = (socket) => {
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
-  socket.on('join-room', ({ roomId, peerId, name }) => {
+  socket.on('join-room', async ({ roomId, peerId, name }) => {
     removeFromRoom(socket);
+
+    // Do not let anyone into a meeting that does not exist or has ended
+    try {
+      const { status } = await getMeetingStatus(roomId);
+      if (status !== 'ok') {
+        socket.emit('room-closed', {
+          reason: status === 'expired' ? 'expired' : 'not-found',
+        });
+        return;
+      }
+    } catch (error) {
+      socket.emit('room-closed', { reason: 'error' });
+      return;
+    }
+    if (!socket.connected) return;
 
     const current = rooms[roomId] ? Object.keys(rooms[roomId]).length : 0;
     if (current >= MAX_PARTICIPANTS) {

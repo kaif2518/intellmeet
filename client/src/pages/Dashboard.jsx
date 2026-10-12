@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
+import { isExpired, hasStarted, formatDateTime } from "../meetingTime";
 
 function Dashboard() {
   const [meetings, setMeetings] = useState([]);
@@ -9,6 +10,7 @@ function Dashboard() {
   const [joinInput, setJoinInput] = useState("");
   const [copiedId, setCopiedId] = useState("");
   const [error, setError] = useState("");
+  const [now, setNow] = useState(Date.now());
   const navigate = useNavigate();
   const token = localStorage.getItem("token");
 
@@ -31,9 +33,19 @@ function Dashboard() {
     fetchMeetings();
   }, []);
 
+  // Refresh every 30 seconds so a meeting flips to "Ended" by itself
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setError("");
+    if (isExpired(scheduledTime)) {
+      setError("That meeting time has already ended. Pick a current or future time.");
+      return;
+    }
     try {
       await api.post(
         "/meetings",
@@ -83,6 +95,17 @@ function Dashboard() {
     navigate("/login");
   };
 
+  const badgeStyle = (color) => ({
+    display: "inline-block",
+    marginLeft: 10,
+    padding: "2px 10px",
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 600,
+    color,
+    border: `1px solid ${color}`,
+  });
+
   return (
     <div>
       <div className="navbar">
@@ -126,23 +149,40 @@ function Dashboard() {
         {meetings.length === 0 && !error && <p className="muted">No meetings yet.</p>}
 
         <ul className="meeting-list">
-          {meetings.map((meeting) => (
-            <li className="meeting-card" key={meeting._id}>
-              <div>
-                <div className="meeting-title">{meeting.title}</div>
-                <div className="meeting-time">
-                  {new Date(meeting.scheduledTime).toLocaleString()}
+          {meetings.map((meeting) => {
+            const ended = isExpired(meeting.scheduledTime, now);
+            const started = hasStarted(meeting.scheduledTime, now);
+            return (
+              <li className="meeting-card" key={meeting._id}>
+                <div>
+                  <div className="meeting-title">
+                    {meeting.title}
+                    {ended ? (
+                      <span style={badgeStyle("#94a0bb")}>Ended</span>
+                    ) : started ? (
+                      <span style={badgeStyle("#34d399")}>Live</span>
+                    ) : (
+                      <span style={badgeStyle("#8b8ff5")}>Upcoming</span>
+                    )}
+                  </div>
+                  <div className="meeting-time">
+                    {formatDateTime(meeting.scheduledTime)}
+                  </div>
                 </div>
-              </div>
-              <div className="meeting-actions" style={{ flexWrap: "wrap" }}>
-                <Link className="btn btn-primary" to={`/meeting/${meeting._id}`}>Join</Link>
-                <button className="btn btn-ghost" onClick={() => copyInvite(meeting._id)}>
-                  {copiedId === meeting._id ? "Link copied!" : "Copy invite link"}
-                </button>
-                <Link className="btn btn-ghost" to={`/meeting-summary/${meeting._id}`}>View Summary</Link>
-              </div>
-            </li>
-          ))}
+                <div className="meeting-actions" style={{ flexWrap: "wrap" }}>
+                  {!ended && (
+                    <>
+                      <Link className="btn btn-primary" to={`/meeting/${meeting._id}`}>Join</Link>
+                      <button className="btn btn-ghost" onClick={() => copyInvite(meeting._id)}>
+                        {copiedId === meeting._id ? "Link copied!" : "Copy invite link"}
+                      </button>
+                    </>
+                  )}
+                  <Link className="btn btn-ghost" to={`/meeting-summary/${meeting._id}`}>View Summary</Link>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

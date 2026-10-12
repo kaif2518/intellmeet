@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 import Peer from "peerjs";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import api from "../api/axios";
+import { isExpired, formatDateTime } from "../meetingTime";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 const socket = SERVER_URL ? io(SERVER_URL) : io();
@@ -77,6 +78,10 @@ function MeetingRoom() {
 
   const myName = JSON.parse(localStorage.getItem("user") || "{}").name || "Guest";
 
+  const [meetingInfo, setMeetingInfo] = useState({
+    status: "checking",
+    scheduledTime: null,
+  });
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [remotes, setRemotes] = useState({});
@@ -95,6 +100,7 @@ function MeetingRoom() {
   const [summarizing, setSummarizing] = useState(false);
   const [error, setError] = useState("");
 
+  const meetingOk = meetingInfo.status === "ok";
   const remoteList = Object.entries(remotes);
   const raisedNames = [
     ...(myHand ? [`${myName} (You)`] : []),
@@ -130,8 +136,44 @@ function MeetingRoom() {
     socket.emit("raise-hand", { roomId, raised: next });
   };
 
+  // Check that the meeting exists and has not ended, before opening the camera
+  useEffect(() => {
+    if (!localStorage.getItem("token")) {
+      navigate("/login");
+      return;
+    }
+
+    let active = true;
+    setMeetingInfo({ status: "checking", scheduledTime: null });
+
+    api
+      .get(`/meeting-status/${roomId}`)
+      .then((res) => {
+        if (!active) return;
+        const { status, scheduledTime } = res.data;
+        if (status === "ok" && scheduledTime && isExpired(scheduledTime)) {
+          setMeetingInfo({ status: "expired", scheduledTime });
+        } else {
+          setMeetingInfo({ status, scheduledTime: scheduledTime || null });
+        }
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.response?.status === 401) {
+          navigate("/login");
+          return;
+        }
+        setMeetingInfo({ status: "error", scheduledTime: null });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [roomId]);
+
   // Video call (everyone connects to everyone) and chat
   useEffect(() => {
+    if (!meetingOk) return;
     if (!localStorage.getItem("token")) {
       navigate("/login");
       return;
@@ -323,6 +365,20 @@ function MeetingRoom() {
       setRoomFull(true);
     };
 
+    // The server says this meeting has ended or does not exist
+    const handleRoomClosed = ({ reason }) => {
+      if (!active) return;
+      setMeetingInfo((prev) => ({
+        ...prev,
+        status:
+          reason === "expired"
+            ? "expired"
+            : reason === "not-found"
+            ? "not-found"
+            : "error",
+      }));
+    };
+
     const handleReceiveMessage = ({ message, sender }) => {
       setMessages((prev) => [...prev, { message, sender }]);
     };
@@ -332,6 +388,7 @@ function MeetingRoom() {
     socket.on("user-left", handleUserLeft);
     socket.on("hand-changed", handleHandChanged);
     socket.on("room-full", handleRoomFull);
+    socket.on("room-closed", handleRoomClosed);
     socket.on("receive-message", handleReceiveMessage);
 
     return () => {
@@ -343,6 +400,7 @@ function MeetingRoom() {
       socket.off("user-left", handleUserLeft);
       socket.off("hand-changed", handleHandChanged);
       socket.off("room-full", handleRoomFull);
+      socket.off("room-closed", handleRoomClosed);
       socket.off("receive-message", handleReceiveMessage);
       Object.values(callsRef.current).forEach((c) => {
         try {
@@ -361,12 +419,15 @@ function MeetingRoom() {
         localStreamRef.current.getTracks().forEach((t) => t.stop());
         localStreamRef.current = null;
       }
+      setRemotes({});
+      setHandsUp({});
     };
-  }, [roomId]);
+  }, [roomId, meetingOk]);
 
   // Live transcript (speech recognition with live partial words)
   useEffect(() => {
-    if (!localStorage.getItem("token") || roomFull) return;
+    if (!meetingOk || roomFull) return;
+    if (!localStorage.getItem("token")) return;
 
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -454,7 +515,7 @@ function MeetingRoom() {
       socket.off("transcript-line", handleLine);
       socket.off("transcript-interim", handleInterim);
     };
-  }, [roomId, roomFull]);
+  }, [roomId, roomFull, meetingOk]);
 
   // Keep the transcript scrolled to the newest line
   useEffect(() => {
@@ -467,14 +528,66 @@ function MeetingRoom() {
     setText("");
   };
 
+  if (meetingInfo.status === "checking") {
+    return (
+      <div className="container">
+        <p className="muted">Checking the meeting...</p>
+      </div>
+    );
+  }
+
+  if (meetingInfo.status === "expired") {
+    return (
+      <div className="container">
+        <div className="summary-card" style={{ textAlign: "center" }}>
+          <h2>This meeting has ended</h2>
+          <p className="muted">
+            It was scheduled for {formatDateTime(meetingInfo.scheduledTime)} and
+            can no longer be joined. Create a new meeting from the dashboard.
+          </p>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <Link className="btn btn-primary" to="/dashboard">
+              Back to Dashboard
+            </Link>
+            <Link className="btn btn-ghost" to={`/meeting-summary/${roomId}`}>
+              View Summary
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (meetingInfo.status === "not-found" || meetingInfo.status === "error") {
+    return (
+      <div className="container">
+        <div className="summary-card" style={{ textAlign: "center" }}>
+          <h2>
+            {meetingInfo.status === "not-found"
+              ? "Meeting not found"
+              : "Could not check this meeting"}
+          </h2>
+          <p className="muted">
+            {meetingInfo.status === "not-found"
+              ? "This link does not match any meeting. Check the link or create a new meeting."
+              : "The server did not answer. Wait a few seconds, then refresh the page."}
+          </p>
+          <Link className="btn btn-primary" to="/dashboard">
+            Back to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (roomFull) {
     return (
       <div className="container">
         <div className="summary-card" style={{ textAlign: "center" }}>
           <h2>This meeting is full</h2>
           <p className="muted">
-            A meeting can have up to {MAX_PARTICIPANTS} people. Ask the host to
-            check the meeting, or try again when someone leaves.
+            A meeting can have up to {MAX_PARTICIPANTS} people. Try again when
+            someone leaves.
           </p>
           <Link className="btn btn-primary" to="/dashboard">
             Back to Dashboard
