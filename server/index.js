@@ -53,6 +53,9 @@ const io = new Server(server, {
 
 const MAX_PARTICIPANTS = 6;
 
+// Only these emojis are accepted as reactions
+const ALLOWED_REACTIONS = ['👍', '💙', '👏', '🎉', '😂', '😮', '🔥'];
+
 // roomId -> { socketId: { peerId, name, handRaised, camOn, micOn } }
 const rooms = {};
 
@@ -144,6 +147,18 @@ io.on('connection', (socket) => {
       peerId: socket.data.peerId,
       camOn: !!camOn,
       micOn: !!micOn,
+    });
+  });
+
+  socket.on('reaction', ({ roomId, emoji }) => {
+    if (!inRoom(socket, roomId) || !rooms[roomId]?.[socket.id]) return;
+    if (!ALLOWED_REACTIONS.includes(emoji)) return;
+    const now = Date.now();
+    if (now - (socket.data.lastReaction || 0) < 250) return;
+    socket.data.lastReaction = now;
+    socket.to(roomId).emit('reaction', {
+      name: rooms[roomId][socket.id].name,
+      emoji,
     });
   });
 

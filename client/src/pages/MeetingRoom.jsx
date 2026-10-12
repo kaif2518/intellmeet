@@ -10,6 +10,12 @@ const socket = SERVER_URL ? io(SERVER_URL) : io();
 
 const MAX_PARTICIPANTS = 6;
 
+// How long the floating controls stay on screen after the last touch
+const CONTROLS_HIDE_MS = 3000;
+
+// Keep this list the same as ALLOWED_REACTIONS in server/index.js
+const REACTION_EMOJIS = ["👍", "💙", "👏", "🎉", "😂", "😮", "🔥"];
+
 const TURN_USER = import.meta.env.VITE_TURN_USERNAME;
 const TURN_PASS = import.meta.env.VITE_TURN_CREDENTIAL;
 const TURN_HOST = import.meta.env.VITE_TURN_HOST || "global.relay.metered.ca";
@@ -38,6 +44,110 @@ const ICE_SERVERS = [
         credential: "openrelayproject",
       },
 ];
+
+const ROOM_CSS = `
+.controls-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 20px);
+  opacity: 1;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.controls-bar.hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-50%) translateY(20px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
+.controls-inner,
+.reaction-tray {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  background: rgba(19, 26, 43, 0.92);
+  border: 1px solid rgba(99, 102, 241, 0.55);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.12);
+  backdrop-filter: blur(10px);
+}
+.reaction-tray { gap: 6px; padding: 8px 10px; }
+.ctrl-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 62px;
+  padding: 8px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  background: rgba(99, 102, 241, 0.18);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.ctrl-btn:hover:not(:disabled) { background: rgba(99, 102, 241, 0.35); }
+.ctrl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ctrl-btn.off { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.6); }
+.ctrl-btn.hand-on { background: rgba(245, 158, 11, 0.3); border-color: #fbbf24; }
+.ctrl-btn.active { background: rgba(56, 189, 248, 0.28); border-color: #38bdf8; }
+.ctrl-icon { font-size: 22px; line-height: 1; }
+.ctrl-label { font-size: 11px; font-weight: 600; }
+.emoji-btn {
+  width: 44px;
+  height: 44px;
+  font-size: 26px;
+  line-height: 1;
+  border-radius: 12px;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.12);
+  cursor: pointer;
+}
+.emoji-btn:hover { background: rgba(56, 189, 248, 0.3); transform: scale(1.1); }
+.reaction-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 45;
+  overflow: hidden;
+}
+.reaction-float {
+  position: absolute;
+  bottom: 100px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: reactionRise 3s ease-out forwards;
+}
+.reaction-emoji {
+  font-size: 40px;
+  line-height: 1;
+  filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.7));
+}
+.reaction-name {
+  margin-top: 3px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.9);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+@keyframes reactionRise {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  12% { transform: translateY(-20px) scale(1.15); opacity: 1; }
+  100% { transform: translateY(-55vh) scale(1); opacity: 0; }
+}
+`;
 
 const avatarStyle = {
   position: "absolute",
@@ -95,6 +205,11 @@ function MeetingRoom() {
   const facingRef = useRef("user");
   const transcriptEndRef = useRef();
   const lastInterimSent = useRef(0);
+  const hideTimerRef = useRef(null);
+  const hoverRef = useRef(false);
+  const lastWake = useRef(0);
+  const reactionIdRef = useRef(0);
+  const lastReactionSent = useRef(0);
 
   const myName = JSON.parse(localStorage.getItem("user") || "{}").name || "Guest";
 
@@ -113,6 +228,9 @@ function MeetingRoom() {
   const [hasCamera, setHasCamera] = useState(true);
   const [canFlip, setCanFlip] = useState(false);
   const [flipping, setFlipping] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const [showReactions, setShowReactions] = useState(false);
+  const [floating, setFloating] = useState([]);
   const [roomFull, setRoomFull] = useState(false);
   const [transcript, setTranscript] = useState([]);
   const [myInterim, setMyInterim] = useState("");
@@ -132,6 +250,48 @@ function MeetingRoom() {
     ...remoteList.filter(([id]) => handsUp[id]).map(([, r]) => r.name),
   ];
   const myCameraShown = hasCamera && camOn;
+
+  // Show the floating controls, then hide them again after a few seconds
+  const scheduleHide = () => {
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      if (hoverRef.current) {
+        scheduleHide();
+        return;
+      }
+      setControlsVisible(false);
+      setShowReactions(false);
+    }, CONTROLS_HIDE_MS);
+  };
+
+  const wakeControls = () => {
+    lastWake.current = Date.now();
+    setControlsVisible(true);
+    scheduleHide();
+  };
+
+  const handlePointerMove = () => {
+    if (Date.now() - lastWake.current > 500) wakeControls();
+  };
+
+  // Float an emoji up the screen
+  const addFloating = (name, emoji) => {
+    reactionIdRef.current += 1;
+    const id = reactionIdRef.current;
+    const left = 10 + Math.random() * 75;
+    setFloating((prev) => [...prev.slice(-19), { id, name, emoji, left }]);
+    setTimeout(() => {
+      setFloating((prev) => prev.filter((r) => r.id !== id));
+    }, 3200);
+  };
+
+  const sendReaction = (emoji) => {
+    const now = Date.now();
+    if (now - lastReactionSent.current < 250) return;
+    lastReactionSent.current = now;
+    socket.emit("reaction", { roomId, emoji });
+    addFloating("You", emoji);
+  };
 
   const openEnd = () => {
     const lines = [...transcript];
@@ -238,6 +398,12 @@ function MeetingRoom() {
     }
     setFlipping(false);
   };
+
+  // Show the controls when the meeting opens, and clean up the timer on exit
+  useEffect(() => {
+    if (meetingOk) wakeControls();
+    return () => clearTimeout(hideTimerRef.current);
+  }, [meetingOk]);
 
   // Check that the meeting exists and has not ended, before opening the camera
   useEffect(() => {
@@ -507,6 +673,13 @@ function MeetingRoom() {
       }));
     };
 
+    // Someone else sent a reaction
+    const handleReaction = ({ name, emoji }) => {
+      if (!active) return;
+      if (!REACTION_EMOJIS.includes(emoji)) return;
+      addFloating(name || "Guest", emoji);
+    };
+
     // The room already has the maximum number of people
     const handleRoomFull = () => {
       if (!active) return;
@@ -545,6 +718,7 @@ function MeetingRoom() {
     socket.on("user-left", handleUserLeft);
     socket.on("hand-changed", handleHandChanged);
     socket.on("media-changed", handleMediaChanged);
+    socket.on("reaction", handleReaction);
     socket.on("room-full", handleRoomFull);
     socket.on("room-closed", handleRoomClosed);
     socket.on("receive-message", handleReceiveMessage);
@@ -558,6 +732,7 @@ function MeetingRoom() {
       socket.off("user-left", handleUserLeft);
       socket.off("hand-changed", handleHandChanged);
       socket.off("media-changed", handleMediaChanged);
+      socket.off("reaction", handleReaction);
       socket.off("room-full", handleRoomFull);
       socket.off("room-closed", handleRoomClosed);
       socket.off("receive-message", handleReceiveMessage);
@@ -581,6 +756,7 @@ function MeetingRoom() {
       setRemotes({});
       setHandsUp({});
       setMediaStates({});
+      setFloating([]);
     };
   }, [roomId, meetingOk]);
 
@@ -769,7 +945,14 @@ function MeetingRoom() {
   const hasInterim = myInterim || Object.keys(remoteInterims).length > 0;
 
   return (
-    <div className="container">
+    <div
+      className="container"
+      style={{ paddingBottom: 140 }}
+      onPointerDown={wakeControls}
+      onPointerMove={handlePointerMove}
+    >
+      <style>{ROOM_CSS}</style>
+
       <div className="room-header">
         <div>
           <h2>Meeting Room</h2>
@@ -863,44 +1046,12 @@ function MeetingRoom() {
         ))}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: 10,
-          justifyContent: "center",
-          flexWrap: "wrap",
-          marginTop: 16,
-        }}
+      <p
+        className="muted"
+        style={{ textAlign: "center", fontSize: 13, marginTop: 12 }}
       >
-        <button
-          className={`btn ${micOn ? "btn-ghost" : "btn-danger"}`}
-          onClick={toggleMic}
-        >
-          {micOn ? "🎤 Mute" : "🔇 Unmute"}
-        </button>
-        <button
-          className={`btn ${myCameraShown ? "btn-ghost" : "btn-danger"}`}
-          onClick={toggleCamera}
-          disabled={!hasCamera}
-        >
-          {myCameraShown ? "📷 Turn camera off" : "🚫 Turn camera on"}
-        </button>
-        {canFlip && (
-          <button
-            className="btn btn-ghost"
-            onClick={flipCamera}
-            disabled={flipping}
-          >
-            🔄 {flipping ? "Switching..." : "Flip camera"}
-          </button>
-        )}
-        <button
-          className={`btn ${myHand ? "btn-hand-active" : "btn-ghost"}`}
-          onClick={toggleHand}
-        >
-          ✋ {myHand ? "Lower hand" : "Raise hand"}
-        </button>
-      </div>
+        Tap the screen to show the controls.
+      </p>
 
       <div className="chat-box">
         <h3>Live Transcript</h3>
@@ -950,6 +1101,87 @@ function MeetingRoom() {
           />
           <button className="btn btn-primary" onClick={sendMessage}>
             Send
+          </button>
+        </div>
+      </div>
+
+      <div className="reaction-layer" aria-hidden="true">
+        {floating.map((r) => (
+          <div
+            key={r.id}
+            className="reaction-float"
+            style={{ left: `${r.left}%` }}
+          >
+            <span className="reaction-emoji">{r.emoji}</span>
+            <span className="reaction-name">{r.name}</span>
+          </div>
+        ))}
+      </div>
+
+      <div
+        className={`controls-bar ${controlsVisible ? "" : "hidden"}`}
+        onPointerEnter={(e) => {
+          if (e.pointerType === "mouse") hoverRef.current = true;
+        }}
+        onPointerLeave={() => {
+          hoverRef.current = false;
+        }}
+      >
+        {showReactions && (
+          <div className="reaction-tray">
+            {REACTION_EMOJIS.map((emoji) => (
+              <button
+                key={emoji}
+                className="emoji-btn"
+                onClick={() => sendReaction(emoji)}
+                aria-label={`Send ${emoji}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="controls-inner">
+          <button
+            className={`ctrl-btn ${micOn ? "" : "off"}`}
+            onClick={toggleMic}
+          >
+            <span className="ctrl-icon">{micOn ? "🎤" : "🔇"}</span>
+            <span className="ctrl-label">{micOn ? "Mute" : "Unmute"}</span>
+          </button>
+          <button
+            className={`ctrl-btn ${myCameraShown ? "" : "off"}`}
+            onClick={toggleCamera}
+            disabled={!hasCamera}
+          >
+            <span className="ctrl-icon">{myCameraShown ? "📷" : "🚫"}</span>
+            <span className="ctrl-label">
+              {myCameraShown ? "Camera off" : "Camera on"}
+            </span>
+          </button>
+          {canFlip && (
+            <button
+              className="ctrl-btn"
+              onClick={flipCamera}
+              disabled={flipping}
+            >
+              <span className="ctrl-icon">🔄</span>
+              <span className="ctrl-label">{flipping ? "Wait..." : "Flip"}</span>
+            </button>
+          )}
+          <button
+            className={`ctrl-btn ${myHand ? "hand-on" : ""}`}
+            onClick={toggleHand}
+          >
+            <span className="ctrl-icon">✋</span>
+            <span className="ctrl-label">{myHand ? "Lower" : "Raise"}</span>
+          </button>
+          <button
+            className={`ctrl-btn ${showReactions ? "active" : ""}`}
+            onClick={() => setShowReactions((v) => !v)}
+          >
+            <span className="ctrl-icon">😊</span>
+            <span className="ctrl-label">React</span>
           </button>
         </div>
       </div>
