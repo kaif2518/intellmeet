@@ -10,7 +10,7 @@ const socket = SERVER_URL ? io(SERVER_URL) : io();
 
 const MAX_PARTICIPANTS = 6;
 
-// How long the floating controls stay on screen after the last touch
+// How long the controls stay on your video after the last touch
 const CONTROLS_HIDE_MS = 3000;
 
 // Keep this list the same as ALLOWED_REACTIONS in server/index.js
@@ -46,73 +46,95 @@ const ICE_SERVERS = [
 ];
 
 const ROOM_CSS = `
-.controls-bar {
-  position: fixed;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
-  z-index: 40;
+.self-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 28px 8px 8px;
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: linear-gradient(
+    to top,
+    rgba(8, 12, 24, 0.92) 0%,
+    rgba(8, 12, 24, 0.72) 60%,
+    rgba(8, 12, 24, 0) 100%
+  );
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  max-width: calc(100vw - 20px);
   opacity: 1;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.25s ease;
 }
-.controls-bar.hidden {
+.self-controls.hidden {
   opacity: 0;
-  visibility: hidden;
-  transform: translateX(-50%) translateY(20px);
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
 }
-.controls-inner,
-.reaction-tray {
+.ctl-row {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+.ctl {
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: #e8ecf5;
+  font: inherit;
+  cursor: pointer;
+}
+.ctl-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2f6df6;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.35);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.ctl:hover:not(:disabled) .ctl-icon { background: #1f56d8; }
+.ctl:active:not(:disabled) .ctl-icon { transform: scale(0.94); }
+.ctl:disabled { opacity: 0.45; cursor: not-allowed; }
+.ctl-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.ctl.off .ctl-icon { background: #dc2f3f; box-shadow: 0 2px 8px rgba(220, 47, 63, 0.35); }
+.ctl.hand-on .ctl-icon { background: #f59e0b; color: #1a1200; box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35); }
+.ctl.active .ctl-icon { background: #0ea5e9; box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35); }
+.react-tray {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 18px;
-  background: rgba(19, 26, 43, 0.92);
-  border: 1px solid rgba(99, 102, 241, 0.55);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(56, 189, 248, 0.12);
-  backdrop-filter: blur(10px);
-}
-.reaction-tray { gap: 6px; padding: 8px 10px; }
-.ctrl-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 62px;
-  padding: 8px 6px;
+  gap: 4px;
+  padding: 5px 6px;
   border-radius: 12px;
-  border: 1px solid rgba(99, 102, 241, 0.45);
-  background: rgba(99, 102, 241, 0.18);
-  color: var(--text);
-  cursor: pointer;
-  font: inherit;
+  background: rgba(19, 26, 43, 0.95);
+  border: 1px solid rgba(59, 130, 246, 0.5);
 }
-.ctrl-btn:hover:not(:disabled) { background: rgba(99, 102, 241, 0.35); }
-.ctrl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.ctrl-btn.off { background: rgba(239, 68, 68, 0.22); border-color: rgba(239, 68, 68, 0.6); }
-.ctrl-btn.hand-on { background: rgba(245, 158, 11, 0.3); border-color: #fbbf24; }
-.ctrl-btn.active { background: rgba(56, 189, 248, 0.28); border-color: #38bdf8; }
-.ctrl-icon { font-size: 22px; line-height: 1; }
-.ctrl-label { font-size: 11px; font-weight: 600; }
-.emoji-btn {
-  width: 44px;
-  height: 44px;
-  font-size: 26px;
+.react-emoji {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  border: none;
+  background: transparent;
+  font-size: 20px;
   line-height: 1;
-  border-radius: 12px;
-  border: 1px solid rgba(56, 189, 248, 0.35);
-  background: rgba(56, 189, 248, 0.12);
   cursor: pointer;
 }
-.emoji-btn:hover { background: rgba(56, 189, 248, 0.3); transform: scale(1.1); }
+.react-emoji:hover { background: rgba(59, 130, 246, 0.3); }
 .reaction-layer {
   position: fixed;
   inset: 0;
@@ -131,13 +153,13 @@ const ROOM_CSS = `
 .reaction-emoji {
   font-size: 40px;
   line-height: 1;
-  filter: drop-shadow(0 4px 12px rgba(99, 102, 241, 0.7));
+  filter: drop-shadow(0 4px 12px rgba(59, 130, 246, 0.7));
 }
 .reaction-name {
   margin-top: 3px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.9);
+  background: rgba(47, 109, 246, 0.92);
   color: #fff;
   font-size: 11px;
   font-weight: 600;
@@ -148,6 +170,78 @@ const ROOM_CSS = `
   100% { transform: translateY(-55vh) scale(1); opacity: 0; }
 }
 `;
+
+const ICONS = {
+  mic: (
+    <>
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </>
+  ),
+  micOff: (
+    <>
+      <line x1="1" y1="1" x2="23" y2="23" />
+      <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+      <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </>
+  ),
+  video: (
+    <>
+      <polygon points="23 7 16 12 23 17 23 7" />
+      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+    </>
+  ),
+  videoOff: (
+    <>
+      <path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </>
+  ),
+  flip: (
+    <>
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </>
+  ),
+  hand: (
+    <>
+      <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" />
+      <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+      <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
+      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+    </>
+  ),
+  smile: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+      <line x1="9" y1="9" x2="9.01" y2="9" />
+      <line x1="15" y1="9" x2="15.01" y2="9" />
+    </>
+  ),
+};
+
+function Icon({ name, size = 20 }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {ICONS[name]}
+    </svg>
+  );
+}
 
 const avatarStyle = {
   position: "absolute",
@@ -251,7 +345,7 @@ function MeetingRoom() {
   ];
   const myCameraShown = hasCamera && camOn;
 
-  // Show the floating controls, then hide them again after a few seconds
+  // Show the controls on your video, then hide them again after a few seconds
   const scheduleHide = () => {
     clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
@@ -947,7 +1041,6 @@ function MeetingRoom() {
   return (
     <div
       className="container"
-      style={{ paddingBottom: 140 }}
       onPointerDown={wakeControls}
       onPointerMove={handlePointerMove}
     >
@@ -1022,18 +1115,103 @@ function MeetingRoom() {
           justifyContent: "center",
         }}
       >
-        <div className={`video-tile ${myHand ? "hand-up" : ""}`}>
+        <div
+          className={`video-tile ${myHand ? "hand-up" : ""}`}
+          onPointerEnter={(e) => {
+            if (e.pointerType === "mouse") {
+              hoverRef.current = true;
+              wakeControls();
+            }
+          }}
+          onPointerLeave={() => {
+            hoverRef.current = false;
+          }}
+        >
           <video ref={myVideoRef} muted playsInline autoPlay />
           {!myCameraShown && (
             <div style={avatarStyle}>{myName.charAt(0).toUpperCase()}</div>
           )}
-          <span className="name-tag">
+          <span className="name-tag" style={{ top: 12, bottom: "auto" }}>
             {myName} (You)
             {!hasCamera ? " - no camera" : ""}
             {!micOn && <span className="hand-badge">🔇</span>}
             {myHand && <span className="hand-badge">✋</span>}
           </span>
+
+          <div className={`self-controls ${controlsVisible ? "" : "hidden"}`}>
+            {showReactions && (
+              <div className="react-tray">
+                {REACTION_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    className="react-emoji"
+                    onClick={() => sendReaction(emoji)}
+                    aria-label={`Send ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="ctl-row">
+              <button
+                className={`ctl ${micOn ? "" : "off"}`}
+                onClick={toggleMic}
+                aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
+              >
+                <span className="ctl-icon">
+                  <Icon name={micOn ? "mic" : "micOff"} />
+                </span>
+                <span className="ctl-label">{micOn ? "Mute" : "Unmute"}</span>
+              </button>
+              <button
+                className={`ctl ${myCameraShown ? "" : "off"}`}
+                onClick={toggleCamera}
+                disabled={!hasCamera}
+                aria-label={myCameraShown ? "Turn camera off" : "Turn camera on"}
+              >
+                <span className="ctl-icon">
+                  <Icon name={myCameraShown ? "video" : "videoOff"} />
+                </span>
+                <span className="ctl-label">Video</span>
+              </button>
+              {canFlip && (
+                <button
+                  className="ctl"
+                  onClick={flipCamera}
+                  disabled={flipping}
+                  aria-label="Switch between front and back camera"
+                >
+                  <span className="ctl-icon">
+                    <Icon name="flip" />
+                  </span>
+                  <span className="ctl-label">{flipping ? "Wait" : "Flip"}</span>
+                </button>
+              )}
+              <button
+                className={`ctl ${myHand ? "hand-on" : ""}`}
+                onClick={toggleHand}
+                aria-label={myHand ? "Lower hand" : "Raise hand"}
+              >
+                <span className="ctl-icon">
+                  <Icon name="hand" />
+                </span>
+                <span className="ctl-label">{myHand ? "Lower" : "Hand"}</span>
+              </button>
+              <button
+                className={`ctl ${showReactions ? "active" : ""}`}
+                onClick={() => setShowReactions((v) => !v)}
+                aria-label="Send a reaction"
+              >
+                <span className="ctl-icon">
+                  <Icon name="smile" />
+                </span>
+                <span className="ctl-label">React</span>
+              </button>
+            </div>
+          </div>
         </div>
+
         {remoteList.map(([id, remote]) => (
           <RemoteVideo
             key={id}
@@ -1050,7 +1228,7 @@ function MeetingRoom() {
         className="muted"
         style={{ textAlign: "center", fontSize: 13, marginTop: 12 }}
       >
-        Tap the screen to show the controls.
+        Tap your video to show the controls.
       </p>
 
       <div className="chat-box">
@@ -1116,74 +1294,6 @@ function MeetingRoom() {
             <span className="reaction-name">{r.name}</span>
           </div>
         ))}
-      </div>
-
-      <div
-        className={`controls-bar ${controlsVisible ? "" : "hidden"}`}
-        onPointerEnter={(e) => {
-          if (e.pointerType === "mouse") hoverRef.current = true;
-        }}
-        onPointerLeave={() => {
-          hoverRef.current = false;
-        }}
-      >
-        {showReactions && (
-          <div className="reaction-tray">
-            {REACTION_EMOJIS.map((emoji) => (
-              <button
-                key={emoji}
-                className="emoji-btn"
-                onClick={() => sendReaction(emoji)}
-                aria-label={`Send ${emoji}`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="controls-inner">
-          <button
-            className={`ctrl-btn ${micOn ? "" : "off"}`}
-            onClick={toggleMic}
-          >
-            <span className="ctrl-icon">{micOn ? "🎤" : "🔇"}</span>
-            <span className="ctrl-label">{micOn ? "Mute" : "Unmute"}</span>
-          </button>
-          <button
-            className={`ctrl-btn ${myCameraShown ? "" : "off"}`}
-            onClick={toggleCamera}
-            disabled={!hasCamera}
-          >
-            <span className="ctrl-icon">{myCameraShown ? "📷" : "🚫"}</span>
-            <span className="ctrl-label">
-              {myCameraShown ? "Camera off" : "Camera on"}
-            </span>
-          </button>
-          {canFlip && (
-            <button
-              className="ctrl-btn"
-              onClick={flipCamera}
-              disabled={flipping}
-            >
-              <span className="ctrl-icon">🔄</span>
-              <span className="ctrl-label">{flipping ? "Wait..." : "Flip"}</span>
-            </button>
-          )}
-          <button
-            className={`ctrl-btn ${myHand ? "hand-on" : ""}`}
-            onClick={toggleHand}
-          >
-            <span className="ctrl-icon">✋</span>
-            <span className="ctrl-label">{myHand ? "Lower" : "Raise"}</span>
-          </button>
-          <button
-            className={`ctrl-btn ${showReactions ? "active" : ""}`}
-            onClick={() => setShowReactions((v) => !v)}
-          >
-            <span className="ctrl-icon">😊</span>
-            <span className="ctrl-label">React</span>
-          </button>
-        </div>
       </div>
     </div>
   );
