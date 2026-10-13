@@ -1,25 +1,25 @@
-IntellMeet
+# IntellMeet
 
 IntellMeet is an AI-powered video meeting platform built using the MERN stack. It combines real-time video conferencing, live transcription, meeting notes, AI-generated summaries, and collaboration tools into a single web application.
 
 Developed as part of the Zidio Internship Program.
 
-Live Demo
+## Live Demo
 Frontend (Vercel): https://intellmeet-puce.vercel.app
 Backend (Render): https://intellmeet-wtu0.onrender.com
 GitHub Repository: https://github.com/kaif2518/intellmeet
 
 ----------------------------------------------------------------------
-Features
+## Features
 
-Authentication
+- Authentication
 
 User signup and login
 JWT-based authentication
 Protected routes
 Password hashing with bcrypt
 
-Meeting Management
+- Meeting Management
 
 Create meetings
 Join meetings using Meeting ID
@@ -27,7 +27,7 @@ Join meetings using invite links
 Dashboard with Live, Upcoming, and Ended meetings
 Automatic meeting expiry after 2 hours from scheduled time
 
-Video Conferencing
+- Video Conferencing
 
 Real-time video meetings using WebRTC
 PeerJS-based peer-to-peer connections
@@ -35,14 +35,14 @@ Multi-user video support
 Participant name labels
 Cross-network connectivity using TURN relay
 
-Live Transcript
+- Live Transcript
 
 Browser Speech Recognition API
 Live transcript with speaker names
 Interim transcript display
 Transcript automatically added to notes when the meeting ends
 
-AI Meeting Summary
+- AI Meeting Summary
 
 AI-generated meeting summaries using Groq
 Meeting overview
@@ -51,14 +51,14 @@ Decisions
 Action items
 Owner and due-date extraction
 
-Collaboration Features
+- Collaboration Features
 
 Raise hand
 Meeting chat
 Emoji reactions
 Real-time reaction animations
 
-Supported reactions:
+-Supported reactions:
 
 👍
 💙
@@ -68,7 +68,7 @@ Supported reactions:
 😮
 🔥
 
-Media Controls
+- Media Controls
 
 Mute / Unmute microphone
 Camera On / Off
@@ -76,7 +76,7 @@ Front and back camera switching on supported devices
 Floating video controls
 Auto-hide controls after inactivity
 
-Security
+- Security
 
 JWT authentication
 Protected API routes
@@ -84,9 +84,9 @@ Socket event validation
 Room membership verification
 
 -------------------------------------------------
-Tech Stack
+## Tech Stack
 
-Frontend
+- Frontend
 
 React
 Vite
@@ -96,7 +96,7 @@ Socket.io Client
 PeerJS
 CSS
 
-Backend
+- Backend
 
 Node.js
 Express.js
@@ -105,30 +105,30 @@ JWT
 bcrypt
 Mongoose
 
-Database
+- Database
 
 MongoDB Atlas
 
-AI
+- AI
 
 Groq API
 GPT-OSS-120B
 
-Real-Time Communication
+- Real-Time Communication
 
 WebRTC
 PeerJS
 Socket.io
 Metered TURN Relay
 
-Deployment
+- Deployment
 
 Vercel (Frontend)
 Render (Backend)
 MongoDB Atlas
 
 ---------------------------------------------------------
-Project Structure
+## Project Structure
 
 intellmeet/
 │
@@ -144,7 +144,7 @@ intellmeet/
 └── README.md
 
 
-Environment Variables
+- Environment Variables
 
 Server (.env)
 
@@ -153,7 +153,7 @@ JWT_SECRET=
 GROQ_API_KEY=
 
 
-Client (.env)
+- Client (.env)
 
 VITE_API_URL=
 VITE_SERVER_URL=
@@ -163,36 +163,36 @@ VITE_TURN_CREDENTIAL=
 Do not commit .env files to GitHub.
 
 ------------------------------------------------------------------
-Local Setup
+## Local Setup
 
-Clone the Repository
+- Clone the Repository
 git clone https://github.com/kaif2518/intellmeet.git
 cd intellmeet
 
-Install Backend Dependencies
+- Install Backend Dependencies
 cd server
 npm install
 
-Install Frontend Dependencies
+- Install Frontend Dependencies
 cd ../client
 npm install
 
-Configure Environment Variables
+- Configure Environment Variables
 Create the required .env files inside both the server and client folders.
 
-Run Backend
+- Run Backend
 cd server
 npm run dev
 
-Run Frontend
+- Run Frontend
 cd client
 npm run dev
 
-Open
+- Open
 http://localhost:5173
 
 ------------------------------------------------------------
-How It Works
+## How It Works
 
 Users create or join a meeting.
 PeerJS establishes WebRTC connections between participants.
@@ -203,7 +203,7 @@ AI generates a structured meeting summary.
 Users can review the summary after the meeting ends.
 
 ---------------------------------------------------------------------
-Current Limitations
+## Current Limitations
 
 Maximum 6 participants per meeting
 Meeting expires 2 hours after scheduled start
@@ -211,7 +211,7 @@ Speech recognition works best in Chrome and Edge
 Mesh architecture is suitable for small groups (approximately 4 to 6 users)
 
 ------------------------------------------------------------------------
-Future Improvements
+## Future Improvements
 
 Picture-in-picture self view
 Host moderation controls
@@ -221,13 +221,14 @@ Calendar integration
 Migration to a media server architecture such as LiveKit
 
 -----------------------------------------------------------
-Author
+## Author
 
 Mohammed Kaif 
 B.E Graduate 
 Electronics and Communication Engineering
 Developed as part of the Zidio Internship Project.
 ---------------------------------------------------------------
-License
+
+## License
 
 This project is intended for educational and internship demonstration purposes.
