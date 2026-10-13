@@ -1,6 +1,3 @@
-
-
-Readme · MD
 # IntellMeet
  
 IntellMeet is an AI-powered video meeting platform built using the MERN stack. It combines real-time video conferencing, live transcription, meeting notes, AI-generated summaries, and collaboration tools into a single web application.
