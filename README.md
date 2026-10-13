@@ -1,10 +1,10 @@
-IntellMeet
+# IntellMeet
 
 IntellMeet is an AI-powered video meeting platform built using the MERN stack. It combines real-time video conferencing, live transcription, meeting notes, AI-generated summaries, and collaboration tools into a single web application.
 
 Developed as part of the Zidio Internship Program.
 
-Live Demo
+## Live Demo
 Frontend (Vercel): https://intellmeet-puce.vercel.app
 Backend (Render): https://intellmeet-wtu0.onrender.com
 GitHub Repository: https://github.com/kaif2518/intellmeet
@@ -59,7 +59,7 @@ Socket event validation
 Room membership verification
 Tech Stack
 
-Frontend
+- Frontend
 
 React
 Vite
@@ -69,7 +69,7 @@ Socket.io Client
 PeerJS
 CSS
 
-Backend
+- Backend
 
 Node.js
 Express.js
@@ -78,23 +78,23 @@ JWT
 bcrypt
 Mongoose
 
-Database
+- Database
 
 MongoDB Atlas
 
-AI
+- AI
 
 Groq API
 GPT-OSS-120B
 
-Real-Time Communication
+- Real-Time Communication
 
 WebRTC
 PeerJS
 Socket.io
 Metered TURN Relay
 
-Deployment
+- Deployment
 
 Vercel (Frontend)
 Render (Backend)
@@ -193,5 +193,7 @@ Mohammed Kaif B.E Graduate Electronics and Communication Engineering
 Developed as part of the Zidio Internship Project.
 
 License
+
+## License
 
 This project is intended for educational and internship demonstration purposes.
