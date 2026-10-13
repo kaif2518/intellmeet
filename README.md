@@ -12,14 +12,14 @@ GitHub Repository: https://github.com/kaif2518/intellmeet
 ----------------------------------------------------------------------
 ## Features
 
--Authentication
+- Authentication
 
 User signup and login
 JWT-based authentication
 Protected routes
 Password hashing with bcrypt
 
--Meeting Management
+- Meeting Management
 
 Create meetings
 Join meetings using Meeting ID
@@ -27,7 +27,7 @@ Join meetings using invite links
 Dashboard with Live, Upcoming, and Ended meetings
 Automatic meeting expiry after 2 hours from scheduled time
 
--Video Conferencing
+- Video Conferencing
 
 Real-time video meetings using WebRTC
 PeerJS-based peer-to-peer connections
@@ -35,14 +35,14 @@ Multi-user video support
 Participant name labels
 Cross-network connectivity using TURN relay
 
--Live Transcript
+- Live Transcript
 
 Browser Speech Recognition API
 Live transcript with speaker names
 Interim transcript display
 Transcript automatically added to notes when the meeting ends
 
--AI Meeting Summary
+- AI Meeting Summary
 
 AI-generated meeting summaries using Groq
 Meeting overview
@@ -51,7 +51,7 @@ Decisions
 Action items
 Owner and due-date extraction
 
--Collaboration Features
+- Collaboration Features
 
 Raise hand
 Meeting chat
@@ -68,7 +68,7 @@ Real-time reaction animations
 😮
 🔥
 
--Media Controls
+- Media Controls
 
 Mute / Unmute microphone
 Camera On / Off
@@ -76,7 +76,7 @@ Front and back camera switching on supported devices
 Floating video controls
 Auto-hide controls after inactivity
 
--Security
+- Security
 
 JWT authentication
 Protected API routes
@@ -86,7 +86,7 @@ Room membership verification
 -------------------------------------------------
 ## Tech Stack
 
--Frontend
+- Frontend
 
 React
 Vite
@@ -96,7 +96,7 @@ Socket.io Client
 PeerJS
 CSS
 
--Backend
+- Backend
 
 Node.js
 Express.js
@@ -105,23 +105,23 @@ JWT
 bcrypt
 Mongoose
 
--Database
+- Database
 
 MongoDB Atlas
 
--AI
+- AI
 
 Groq API
 GPT-OSS-120B
 
--Real-Time Communication
+- Real-Time Communication
 
 WebRTC
 PeerJS
 Socket.io
 Metered TURN Relay
 
--Deployment
+- Deployment
 
 Vercel (Frontend)
 Render (Backend)
@@ -144,7 +144,7 @@ intellmeet/
 └── README.md
 
 
--Environment Variables
+- Environment Variables
 
 Server (.env)
 
@@ -153,7 +153,7 @@ JWT_SECRET=
 GROQ_API_KEY=
 
 
--Client (.env)
+- Client (.env)
 
 VITE_API_URL=
 VITE_SERVER_URL=
@@ -165,30 +165,30 @@ Do not commit .env files to GitHub.
 ------------------------------------------------------------------
 ## Local Setup
 
--Clone the Repository
+- Clone the Repository
 git clone https://github.com/kaif2518/intellmeet.git
 cd intellmeet
 
--Install Backend Dependencies
+- Install Backend Dependencies
 cd server
 npm install
 
--Install Frontend Dependencies
+- Install Frontend Dependencies
 cd ../client
 npm install
 
--Configure Environment Variables
+- Configure Environment Variables
 Create the required .env files inside both the server and client folders.
 
--Run Backend
+- Run Backend
 cd server
 npm run dev
 
--Run Frontend
+- Run Frontend
 cd client
 npm run dev
 
--Open
+- Open
 http://localhost:5173
 
 ------------------------------------------------------------
